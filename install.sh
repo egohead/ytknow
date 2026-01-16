@@ -24,16 +24,8 @@ source .venv/bin/activate
 
 echo "📦 Installing Python dependencies into venv..."
 pip install --upgrade pip
-pip install -r requirements.txt
-
-# Create a robust wrapper script
-BIN_PATH="/usr/local/bin/ytknow"
-WRAPPER_CONTENT="#!/bin/bash
-$(pwd)/.venv/bin/python3 $(pwd)/ytknow.py \"\$@\""
-
-echo "🔗 Creating global wrapper script at $BIN_PATH"
-echo "$WRAPPER_CONTENT" | sudo tee "$BIN_PATH" > /dev/null
-sudo chmod +x "$BIN_PATH"
+echo "📦 Installing ytknow package in editable mode..."
+pip install -e .
 
 echo "✅ Installation complete!"
 echo "You can now run 'ytknow [URL]' from anywhere."
