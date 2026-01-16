@@ -12,6 +12,7 @@ import logging
 import argparse
 import subprocess
 from pathlib import Path
+from html import unescape
 import json
 import textwrap
 from collections import Counter
