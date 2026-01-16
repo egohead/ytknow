@@ -4,6 +4,10 @@
   <img src="ytknow_preview.png" alt="ytknow logo" width="400">
 </p>
 
+<p align="center">
+  <img src="ytknow_terminal.png" alt="ytknow terminal screenshot" width="600">
+</p>
+
 **Extract YouTube channel knowledge into clean text files for learning & research.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
