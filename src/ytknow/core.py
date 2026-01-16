@@ -16,24 +16,26 @@ from .ai import transcribe_with_whisper, generate_summary_llm
 logger = logging.getLogger(__name__)
 
 def get_source_title(url: str) -> str:
-    """Gets the uploader or playlist/video title for naming the output file."""
+    """Gets the channel name (uploader) to use as the root directory."""
     try:
-        # Try to get uploader (for channels) or title (for single videos)
-        cmd = ["yt-dlp", "--get-title", "--no-playlist", url]
-        if "@" in url or "/channel/" in url or "/user/" in url or "/c/" in url:
-            # For channels, uploader might be better, but --get-title on a channel usually gives nothing or first video
-            # So we use a different approach for channels if needed.
-            # Actually, yt-dlp --print "%(uploader)s" is very reliable for channels.
-            cmd = ["yt-dlp", "--print", "%(uploader)s", "--playlist-items", "1", url]
+        # Always try to get the uploader/channel name first
+        cmd = ["yt-dlp", "--print", "%(uploader)s", "--playlist-items", "1", url]
         
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         if result.stdout.strip():
             title = result.stdout.strip().splitlines()[0]
+            # Clean it up strictly
             return re.sub(r'[^\w\-]', '_', title)
+        
+        # Fallback to title if uploader fails (rare)
+        cmd_fallback = ["yt-dlp", "--get-title", "--no-playlist", url]
+        res_fall = subprocess.run(cmd_fallback, capture_output=True, text=True)
+        if res_fall.stdout.strip():
+            return re.sub(r'[^\w\-]', '_', res_fall.stdout.strip())
+            
         return "Unknown_Source"
     except Exception as e:
         handle_ytdlp_error(e, "get_source_title")
-        # Fallback to URL-based slug if metadata fetching fails
         return re.sub(r'[^\w\-]', '_', url.split('@')[-1] if '@' in url else "knowledge")
 
 def run_channel_survey(url: str, limit: int = 50):
@@ -187,10 +189,17 @@ def process_url(url: str, output_dir: Path, lang_code: str, enable_summarize: bo
     print(f"{Fore.CYAN}📥 Source:   {source_slug}")
     print(f"{Fore.CYAN}🌍 Language: {lang_code}")
     print("-" * 60)
+    # Create Channel Root Directory
+    channel_dir = output_dir / source_slug
+    channel_dir.mkdir(parents=True, exist_ok=True)
     
-    # We use a subfolder for raw VTTs
-    temp_dir = output_dir / f"temp_{source_slug}_{lang_code}"
+    # Temp dir inside channel folder
+    temp_dir = channel_dir / "tmp"
     temp_dir.mkdir(exist_ok=True)
+    
+    # Subdir for individual video folders
+    videos_sub_dir = channel_dir / "videos"
+    videos_sub_dir.mkdir(exist_ok=True)
     
     # yt-dlp command to get subtitles AND metadata
     sub_pattern = f"{lang_code}.*"
@@ -306,20 +315,20 @@ def process_url(url: str, output_dir: Path, lang_code: str, enable_summarize: bo
         shutil.rmtree(temp_dir)
         return None
 
-    # Prepare the output directory for this session
-    session_dir = output_dir / f"{source_slug}_{lang_code}"
-    session_dir.mkdir(exist_ok=True)
-    
-    jsonl_master = session_dir / "knowledge_master.jsonl"
-    jsonl_chunks = session_dir / "knowledge_chunks.jsonl"
+    jsonl_master = channel_dir / f"{source_slug}_master.jsonl"
+    jsonl_chunks = channel_dir / f"{source_slug}_chunks.jsonl"
+    master_txt_path = channel_dir / f"{source_slug}_master.txt"
+    master_md_path = channel_dir / f"{source_slug}_master.md"
     
     total_files = len(files_to_process)
-    print(f"{Fore.WHITE}Step 2/3: Processing {total_files} videos into '{session_dir.name}/'...")
+    print(f"{Fore.WHITE}Step 2/3: Processing {total_files} videos into '{channel_dir.name}/'...")
     
     import json
     processed_count = 0
     with open(jsonl_master, "w", encoding="utf-8") as j_master, \
-         open(jsonl_chunks, "w", encoding="utf-8") as j_chunks:
+         open(jsonl_chunks, "w", encoding="utf-8") as j_chunks, \
+         open(master_txt_path, "w", encoding="utf-8") as m_txt, \
+         open(master_md_path, "w", encoding="utf-8") as m_md:
          
         for i, file_path in enumerate(files_to_process, 1):
             # Base name for metadata matching
@@ -365,17 +374,49 @@ def process_url(url: str, output_dir: Path, lang_code: str, enable_summarize: bo
                 if clean_text:
                     video_title = metadata.get("title") or base_name
                     safe_title = re.sub(r'[^\w\-]', '_', video_title)[:100]
-                    target_file = session_dir / f"{safe_title}.txt"
                     
-                    # 1. Save TXT with Full Metadata Context
+                    # Create Video Subdirectory inside 'videos' folder
+                    video_dir = videos_sub_dir / safe_title
+                    video_dir.mkdir(exist_ok=True)
+                    
+                    target_file = video_dir / f"{safe_title}.txt"
+                    
+                    
+                    # 1. Save TXT with Full Metadata Context (Individual)
+                    txt_header = ""
+                    txt_header += f"TITLE: {video_title}\n"
+                    if metadata.get("url"): txt_header += f"URL:   {metadata['url']}\n"
+                    if metadata.get("date"): txt_header += f"DATE:  {metadata['date']}\n"
+                    if metadata.get("description"):
+                        txt_header += f"DESCRIPTION:\n{textwrap.indent(metadata['description'][:500] + '...', '  ')}\n"
+                    txt_header += "-" * 60 + "\n\n"
+                    
+                    full_txt_content = txt_header + clean_text + "\n"
+                    
                     with open(target_file, "w", encoding="utf-8") as f:
-                        f.write(f"TITLE: {video_title}\n")
-                        if metadata.get("url"): f.write(f"URL:   {metadata['url']}\n")
-                        if metadata.get("date"): f.write(f"DATE:  {metadata['date']}\n")
-                        if metadata.get("description"):
-                            f.write(f"DESCRIPTION:\n{textwrap.indent(metadata['description'][:500] + '...', '  ')}\n")
-                        f.write("-" * 60 + "\n\n")
-                        f.write(clean_text + "\n")
+                        f.write(full_txt_content)
+                        
+                    # Append to MASTER TXT
+                    m_txt.write(full_txt_content + "\n" + "="*60 + "\n\n")
+                    
+                    # 1b. Save MD (Markdown) (Individual)
+                    md_header = ""
+                    md_header += f"# {video_title}\n\n"
+                    if metadata.get("url"): md_header += f"**URL:** [{metadata['url']}]({metadata['url']})\n"
+                    if metadata.get("channel"): md_header += f"**Channel:** {metadata['channel']}\n"
+                    if metadata.get("date"): md_header += f"**Date:** {metadata['date']}\n"
+                    if metadata.get("description"):
+                        md_header += f"\n> **Description:**\n> {metadata['description'][:500].replace(chr(10), chr(10)+'> ') + '...'}\n"
+                    md_header += "\n---\n\n"
+                    
+                    full_md_content = md_header + clean_text + "\n"
+                    
+                    target_md = video_dir / f"{safe_title}.md"
+                    with open(target_md, "w", encoding="utf-8") as f:
+                        f.write(full_md_content)
+                    
+                    # Append to MASTER MD
+                    m_md.write(full_md_content + "\n---\n\n")
                     
                     # 2. Append to MASTER JSONL (Full Text)
                     json_entry = {
@@ -400,7 +441,7 @@ def process_url(url: str, output_dir: Path, lang_code: str, enable_summarize: bo
                     if enable_summarize:
                          summary = generate_summary_llm(clean_text, metadata)
                          if summary:
-                             summary_file = session_dir / f"{safe_title}_summary.md"
+                             summary_file = video_dir / f"{safe_title}_summary.md"
                              with open(summary_file, "w", encoding="utf-8") as f:
                                  f.write(summary)
                     
@@ -409,5 +450,6 @@ def process_url(url: str, output_dir: Path, lang_code: str, enable_summarize: bo
                 logger.error(f"Failed to process {file_path.name}: {e}")
             
     # Cleanup temp folder
-    shutil.rmtree(temp_dir)
-    return (session_dir, processed_count)
+    # User requested to keep tmp files: "temp for individual download files"
+    # shutil.rmtree(temp_dir)
+    return (channel_dir, processed_count)

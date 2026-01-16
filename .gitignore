@@ -1,10 +1,11 @@
 # Result and temp files
+outputs/
 downloads/
 conversion.log
 
 # Python
 __pycache__/
-*.py[cod]
+*.pyc
 *$py.class
 *.so
 .Python

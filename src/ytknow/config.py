@@ -10,7 +10,7 @@ except ImportError:
 
 # Configuration
 LOG_FILE = "conversion.log"
-DEFAULT_OUTPUT_DIR = "downloads"
+DEFAULT_OUTPUT_DIR = "outputs"
 
 # ASCII Art Banner
 BANNER = f"""{Fore.CYAN}
