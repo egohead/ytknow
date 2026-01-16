@@ -362,6 +362,14 @@ def select_language_interactive(url: str, is_channel: bool) -> str:
         print(f"{Fore.YELLOW}No subtitles found. Falling back to default 'en'.")
         return "en"
     
+    # Smart Fallback: If 'en' is requested but not found, try 'en-orig'
+    if "en" not in langs and "en-orig" in langs:
+        return "en-orig"
+        
+    # If only one option exists, take it (if it's English-ish)
+    if len(langs) == 1 and "en" in langs[0]:
+        return langs[0]
+    
     # Priority sorting
     all_options = sorted(langs, key=lambda x: (
         0 if x.endswith("-orig") else 
@@ -569,10 +577,22 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
             process.wait()
                 
     except Exception as e:
-        vtt_files = list(temp_dir.glob("*.vtt"))
-        if not vtt_files:
-            handle_ytdlp_error(e, "process_url")
-            return None
+        # Check if temp_dir was defined
+        try:
+            if 'temp_dir' in locals() and temp_dir.exists():
+                 vtt_files = list(temp_dir.glob("*.vtt"))
+                 if not vtt_files:
+                     handle_ytdlp_error(e, "process_url")
+                     return None
+            else:
+                 handle_ytdlp_error(e, "process_url")
+                 return None
+        except Exception:
+             handle_ytdlp_error(e, "process_url")
+             return None
+
+    if 'temp_dir' not in locals():
+         return None
 
     vtt_files = list(temp_dir.glob("*.vtt"))
     if not vtt_files:
