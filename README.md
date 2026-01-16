@@ -12,25 +12,16 @@
 
 ---
 
----
-
 ## 📖 Table of Contents
 - [⚖️ Legal Notice & Disclaimer](#⚖️-legal-notice--disclaimer)
 - [✨ Features](#-features)
-- [🧠 How it Works](#-how-it-works-smart-deduplication)
-- [🧹 Before & After](#-before--after)
+- [� How it Works](#-how-it-works-smart-deduplication)
+- [�🧹 Before & After](#-before--after)
+- [🛠️ Built With](#️-built-with)
 - [🛠️ Installation](#️-installation)
 - [🚀 Usage](#-usage)
 - [❓ FAQ](#-faq)
 - [🤝 Contributing](#-contributing)
-
----
-
-## 🛠 Built With
-
-* [![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://www.python.org/)
-* [![yt-dlp](https://img.shields.io/badge/yt--dlp-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://github.com/yt-dlp/yt-dlp)
-* [![FFmpeg](https://img.shields.io/badge/FFmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white)](https://ffmpeg.org/)
 
 ---
 
@@ -56,7 +47,21 @@
 
 ---
 
-## 🧹 Before & After
+## � How it Works: Smart Deduplication
+
+Most YouTube subtitle downloaders just give you the raw VTT, which is full of repetition because YouTube "builds" sentences word-by-word in auto-generated captions. 
+
+`ytknow` uses a **Prefix-Matching Algorithm**:
+1. It strips all millisecond-level timestamps and inline tags.
+2. It compares each new line with the previous one.
+3. If the new line starts with the previous text, it "evolves" the line instead of repeating it.
+4. If it's a duplicate or a subset, it's discarded.
+
+**Result:** You get a clean, human-readable paragraph instead of a 10,000-line stuttering mess.
+
+---
+
+## �🧹 Before & After
 
 `ytknow` cleans up the messy duplication and timing tags common in YouTube auto-captions:
 
@@ -73,21 +78,7 @@ das heutige Video bedarf eines Vorworts
 
 ---
 
-## 🧠 How it Works: Smart Deduplication
-
-Most YouTube subtitle downloaders just give you the raw VTT, which is full of repetition because YouTube "builds" sentences word-by-word in auto-generated captions. 
-
-`ytknow` uses a **Prefix-Matching Algorithm**:
-1. It strips all millisecond-level timestamps and inline tags.
-2. It compares each new line with the previous one.
-3. If the new line starts with the previous text, it "evolves" the line instead of repeating it.
-4. If it's a duplicate or a subset, it's discarded.
-
-**Result:** You get a clean, human-readable paragraph instead of a 10,000-line stuttering mess.
-
----
-
-## 🔥 Features
+## ✨ Features
 
 - 🚀 **Lightning Fast**: Uses `yt-dlp` with `--lazy-playlist` to start processing immediately, even on channels with 2000+ videos.
 - 🧹 **Deep Cleaning**: Removes all VTT timing codes (`00:00:03.470 --> ...`), word-level tags (`<c>`), and alignment metadata.
@@ -96,6 +87,16 @@ Most YouTube subtitle downloaders just give you the raw VTT, which is full of re
 - 🌍 **Multi-Language Support**: Interactive selection of original, manual, or auto-translated subtitles with native language names.
 - 🛡️ **Resilient**: Gracefully handles unavailable or private videos in large playlists without crashing.
 - 📄 **Clean Output**: Generates beautifully wrapped text files named after video titles.
+
+---
+
+## 🛠️ Built With
+
+* [![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://www.python.org/)
+* [![yt-dlp](https://img.shields.io/badge/yt--dlp-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://github.com/yt-dlp/yt-dlp)
+* [![FFmpeg](https://img.shields.io/badge/FFmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white)](https://ffmpeg.org/)
+
+---
 
 ## 🛠️ Installation
 
@@ -140,19 +141,6 @@ downloads/
     └── ChannelName_metadata.json
 ```
 
-## 🔧 Troubleshooting
-
-- **No Subtitles Found**: Ensure the video has at least auto-generated captions for the selected language.
-- **YouTube 429 Error**: If you get rate-limited, wait approx. 15 minutes before trying again. 
-- **Logs**: Detailed logs are available in `conversion.log`.
-
-## 🗺 Roadmap
-
-- [x] Multi-language support
-- [ ] Direct export to Notion API
-- [ ] Integration with local LLMs (Ollama) for summarization
-- [ ] GUI wrapper for non-CLI users
-
 ## ❓ FAQ
 
 **Q: Does it work with private videos?**
@@ -177,3 +165,6 @@ Contributions are what make the open-source community such an amazing place to l
 ## ⚖️ MIT License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+*This project respects content creators and YouTube's ToS.*
