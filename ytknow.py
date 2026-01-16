@@ -12,9 +12,9 @@ import logging
 import argparse
 import subprocess
 from pathlib import Path
-from html import unescape
-from typing import List, Optional, Dict
+import json
 import textwrap
+from collections import Counter
 
 try:
     from colorama import init, Fore, Style
@@ -252,9 +252,6 @@ def run_channel_survey(url: str, limit: int = 50):
             print(f"{Fore.YELLOW}⚠ No videos found in this survey range.")
             return
 
-        import json
-        from collections import Counter
-        
         manual_counts = Counter()
         auto_counts = Counter()
         
@@ -583,12 +580,14 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
                     safe_title = re.sub(r'[^\w\-]', '_', video_title)[:100]
                     target_file = session_dir / f"{safe_title}.txt"
                     
-                    # 1. Save TXT with Metadata Header
+                    # 1. Save TXT with Full Metadata Context
                     with open(target_file, "w", encoding="utf-8") as f:
                         f.write(f"TITLE: {video_title}\n")
                         if metadata.get("url"): f.write(f"URL:   {metadata['url']}\n")
                         if metadata.get("date"): f.write(f"DATE:  {metadata['date']}\n")
-                        f.write("-" * 40 + "\n\n")
+                        if metadata.get("description"):
+                            f.write(f"DESCRIPTION:\n{textwrap.indent(metadata['description'][:500] + '...', '  ')}\n")
+                        f.write("-" * 60 + "\n\n")
                         f.write(clean_text + "\n")
                     
                     # 2. Append to JSONL for RAG/LLM
@@ -653,11 +652,14 @@ Examples:
     
     print("\n" + "=" * 60)
     if result:
-        file_path, count = result
+        dir_path, count = result
         print(f"{Fore.GREEN}✅ SUCCESS: Knowledge Base created!")
         print(f"{Fore.WHITE}Videos processed: {Fore.CYAN}{count}")
-        print(f"{Fore.WHITE}Target File:      {Fore.GREEN}{file_path.absolute()}")
-        print(f"{Fore.WHITE}File Size:        {Fore.YELLOW}{file_path.stat().st_size / 1024:.1f} KB")
+        print(f"{Fore.WHITE}Location:         {Fore.GREEN}{dir_path.absolute()}")
+        
+        # Calculate total size of the session directory
+        total_size = sum(f.stat().st_size for f in dir_path.glob('*') if f.is_file())
+        print(f"{Fore.WHITE}Total Size:       {Fore.YELLOW}{total_size / 1024:.1f} KB")
     else:
         print(f"{Fore.RED}❌ FAILED: Could not create knowledge base.")
     
