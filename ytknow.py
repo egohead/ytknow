@@ -202,27 +202,15 @@ def get_source_title(url: str) -> str:
             cmd = ["yt-dlp", "--print", "%(uploader)s", "--playlist-items", "1", url]
         
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        title = result.stdout.strip().splitlines()[0]
-        return re.sub(r'[^\w\-]', '_', title)
+        if result.stdout.strip():
+            title = result.stdout.strip().splitlines()[0]
+            return re.sub(r'[^\w\-]', '_', title)
+        return "Unknown_Source"
     except Exception as e:
         handle_ytdlp_error(e, "get_source_title")
         # Fallback to URL-based slug if metadata fetching fails
         return re.sub(r'[^\w\-]', '_', url.split('@')[-1] if '@' in url else "knowledge")
 
-def process_url(url: str, output_dir: Path):
-    """Downloads and processes subtitles from a YouTube URL (Channel or Video)."""
-    check_dependencies()
-    
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    source_slug = get_source_title(url)
-    print(f"{Fore.CYAN}📥 Source identified: {source_slug}")
-    print(f"{Fore.CYAN}📥 Downloading subtitles from: {url}")
-    
-    # We use a subfolder for raw VTTs
-    temp_dir = output_dir / f"temp_{source_slug}"
-    temp_dir.mkdir(exist_ok=True)
-    
 def run_channel_survey(url: str, limit: int = 50):
     """Scans a channel/playlist and reports subtitle availability statistics."""
     print(f"\n{Fore.CYAN}🔍 Surveying channel/playlist (scanning up to {limit} videos)...")
@@ -453,9 +441,6 @@ def print_progress(current, total, prefix='', suffix='', length=40):
     # \033[K clears from cursor to end of line
     sys.stdout.write(f'\r{prefix} |{bar}| {percent}% {suffix}\033[K')
     sys.stdout.flush()
-    # Cleanup temp folder
-    shutil.rmtree(temp_dir)
-    return (session_dir, processed_count)
 
 def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 100) -> List[str]:
     """Splits text into overlapping chunks, respecting sentence boundaries where possible."""

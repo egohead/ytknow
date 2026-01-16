@@ -90,7 +90,8 @@ das heutige Video bedarf eines Vorworts
 - 🧠 **Smart Deduplication**: Automatically resolves sentence-building repetition in YouTube's auto-captions.
 - 🤖 **LLM-Optimized**: Generates clean TXT files with rich metadata headers and a consolidated JSONL master file.
 - 📊 **Channel Survey**: Use `--survey` to scan available languages across a whole channel.
-- 🌍 **Multi-Language Support**: Selection of original, manual, or auto-translated subtitles with native names.
+- 🌍 **Multi-Language Support**: Interactive menu to choose from original, manual, or auto-translated subtitles.
+- 🔄 **Smart Fallback**: Automatically prefers `en-orig` if standard `en` is unavailable but requested.
 - 🛡️ **Resilient**: Gracefully handles unavailable or private videos in large playlists.
 
 ---
@@ -104,14 +105,16 @@ Output files include header metadata (Source URL, Upload Date), allowing LLMs to
 
 ### Master JSONL Export
 Every session generates a `knowledge_master.jsonl` file. This format is the industry standard for:
-*   **Vector Database Ingestion**: easily upload text + metadata to Pinecone, Weaviate, or Chroma.
 *   **Model Fine-tuning**: directly usable as a training dataset.
+*   **Archiving**: keeps full context per video.
 
-### Why Chunking?
-While `ytknow` provides clean text, we recommend "Semantic Chunking" before embedding:
-1.  **Context Window**: Transcripts can be huge; chunking ensures they fit into LLM prompts.
-2.  **Precision**: Small chunks (500-1000 tokens) allow the vector search to find the *exact* paragraph relevant to a query.
-3.  **Cost**: Only relevant chunks are sent to the LLM, saving on API tokens.
+### 🧩 Built-in Semantic Chunking
+`ytknow` automatically generates a **second file** called `knowledge_chunks.jsonl`.
+*   **Ready-to-Embed**: Splits text into ~1000 char chunks, respecting sentence boundaries.
+*   **Overlapping**: Includes 100 char overlap to preserve context between chunks.
+*   **Metadata Preserved**: Each chunk carries the video URL, title, and upload date.
+
+> **Just upload `knowledge_chunks.jsonl` to your Vector DB (Pinecone, Chroma, Weaviate) and you're done!**
 
 ---
 
@@ -158,8 +161,9 @@ The app creates a directory for each session. Each video gets a `.txt` file with
 ```text
 downloads/
 └── ChannelName_en/
-    ├── knowledge_master.jsonl    <-- Perfect for Vector DBs
-    ├── Video_Title_1.txt         <-- Human readable with headers
+    ├── knowledge_master.jsonl    <-- Full context for each video
+    ├── knowledge_chunks.jsonl    <-- 1000-char semantic chunks (RAG ready)
+    ├── Video_Title_1.txt         <-- Human readable with metadata headers
     └── Video_Title_2.txt
 ```
 
