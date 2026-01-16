@@ -465,29 +465,29 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
     temp_dir = output_dir / f"temp_{source_slug}_{lang_code}"
     temp_dir.mkdir(exist_ok=True)
     
-    # yt-dlp command to get subtitles
+    # yt-dlp command to get subtitles AND metadata
     sub_pattern = f"{lang_code}.*"
     cmd = [
         "yt-dlp",
         "--skip-download",
         "--write-subs",
         "--write-auto-subs",
+        "--write-info-json", # Get rich metadata
         "--sub-langs", sub_pattern,
         "--output", f"{temp_dir}/%(title)s.%(ext)s",
         "--newline",
-        "--lazy-playlist", # Immediate processing
+        "--lazy-playlist",
         "--progress-template", "DOWNLOAD_PROGRESS:%(progress._percent_str)s",
-        "--ignore-errors", # Don't stop the whole process if one video fails
+        "--ignore-errors",
         url
     ]
     
-    print(f"{Fore.WHITE}Step 1/2: Downloading Subtitles...")
-    print(f"{Fore.BLACK}{Style.BRIGHT}Searching for videos with subtitles (this may take a moment)...")
+    print(f"{Fore.WHITE}Step 1/3: Downloading Subtitles & Metadata...")
+    print(f"{Fore.BLACK}{Style.BRIGHT}Scanning channel for videos (this might take a moment)...")
     
     current_video_title = "Video"
     last_status = ""
     try:
-        # Open log file for appending
         with open(LOG_FILE, "a") as log:
             log.write(f"\n--- Starting Download: {url} ---\n")
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -496,24 +496,21 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
                 log.write(line)
                 clean_line = line.strip()
                 
-                # Update title from [info] line
-                if "[info] Writing video subtitles to:" in clean_line:
+                if "[info] Writing video subtitles to:" in clean_line or "[info] Writing video metadata as JSON to:" in clean_line:
                     try:
                         path_part = clean_line.split("to:", 1)[-1].strip()
                         file_name = Path(path_part).name
                         title_part = re.sub(r'\.[a-z]{2}(-[a-zA-Z0-9]+)?\.vtt$', '', file_name)
+                        title_part = re.sub(r'\.info\.json$', '', title_part)
                         if title_part:
                             current_video_title = title_part
                     except Exception:
                         pass
 
-                # Show extraction status lines to keep user informed, but avoid duplicates/spam
                 if clean_line.startswith("[") and "DOWNLOAD_PROGRESS" not in clean_line:
                     tag = clean_line.split("]", 1)[0] + "]" if "]" in clean_line else ""
                     if tag in ["[youtube]", "[info]", "[download]"] and clean_line != last_status:
-                        # Clear progress bar before printing status
                         sys.stdout.write("\r\033[K")
-                        # Truncate strictly to avoid wrapping
                         display_line = (clean_line[:70] + '..') if len(clean_line) > 70 else clean_line
                         print(f"{Fore.BLACK}{Style.BRIGHT}{display_line}")
                         last_status = clean_line
@@ -522,18 +519,14 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
                     try:
                         p_str = clean_line.split("DOWNLOAD_PROGRESS:")[-1].strip().split(" ")[0].replace('%', '')
                         p_float = float(p_str)
-                        # Short prefix to avoid wrapping
                         short_title = (current_video_title[:20] + '..') if len(current_video_title) > 20 else current_video_title
-                        print_progress(p_float, 100, prefix=f'Downloading {short_title}', suffix='')
+                        print_progress(p_float, 100, prefix=f'Fetching {short_title}', suffix='')
                     except (ValueError, IndexError):
                         pass
             
             process.wait()
-            # We ignore process.returncode here because we check vtt_files below.
-            # Large channels often have some failed items even if others succeed.
                 
     except Exception as e:
-        # Only treat as fatal if we have NO files
         vtt_files = list(temp_dir.glob("*.vtt"))
         if not vtt_files:
             handle_ytdlp_error(e, "process_url")
@@ -547,40 +540,69 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
     # Prepare the output directory for this session
     session_dir = output_dir / f"{source_slug}_{lang_code}"
     session_dir.mkdir(exist_ok=True)
+    jsonl_file = session_dir / "knowledge_master.jsonl"
     
     total_files = len(vtt_files)
-    print(f"{Fore.WHITE}Step 2/2: Processing {total_files} files into '{session_dir.name}/'...")
+    print(f"{Fore.WHITE}Step 2/3: Processing {total_files} videos into '{session_dir.name}/'...")
     
+    import json
     processed_count = 0
-    for i, vtt_path in enumerate(vtt_files, 1):
-        # Extract video title from filename
-        video_title = re.sub(r'\.[a-z]{2}(-[a-zA-Z0-9]+)?\.vtt$', '', vtt_path.name)
-        
-        # Print progress for processing
-        print_progress(i, total_files, prefix='Processing ', suffix=f'({i}/{total_files})')
-        
-        try:
-            with open(vtt_path, "r", encoding="utf-8") as f:
-                content = f.read()
+    with open(jsonl_file, "w", encoding="utf-8") as jsonl:
+        for i, vtt_path in enumerate(vtt_files, 1):
+            # Base name for metadata matching
+            base_name = re.sub(r'\.[a-z]{2}(-[a-zA-Z0-9]+)?\.vtt$', '', vtt_path.name)
+            info_json_path = vtt_path.with_name(f"{base_name}.info.json")
             
-            clean_text = clean_vtt_content(content)
+            # Extract metadata if available
+            metadata = {}
+            if info_json_path.exists():
+                try:
+                    with open(info_json_path, "r", encoding="utf-8") as j:
+                        raw_meta = json.load(j)
+                        metadata = {
+                            "title": raw_meta.get("title", ""),
+                            "url": raw_meta.get("webpage_url", ""),
+                            "date": raw_meta.get("upload_date", ""),
+                            "description": raw_meta.get("description", ""),
+                            "channel": raw_meta.get("uploader", ""),
+                            "view_count": raw_meta.get("view_count", 0)
+                        }
+                except Exception:
+                    pass
+
+            print_progress(i, total_files, prefix='Optimizing ', suffix=f'({i}/{total_files})')
             
-            if clean_text:
-                # Save as individual file
-                safe_title = re.sub(r'[^\w\-]', '_', video_title)
-                # Ensure filename isn't too long
-                safe_title = safe_title[:100]
-                target_file = session_dir / f"{safe_title}.txt"
+            try:
+                with open(vtt_path, "r", encoding="utf-8") as f:
+                    content = f.read()
                 
-                with open(target_file, "w", encoding="utf-8") as f:
-                    f.write(f"VIDEO: {video_title}\n")
-                    f.write("=" * len(f"VIDEO: {video_title}") + "\n\n")
-                    f.write(clean_text + "\n")
-                processed_count += 1
-        except Exception as e:
-            logger.error(f"Failed to process {vtt_path.name}: {e}")
+                clean_text = clean_vtt_content(content)
+                
+                if clean_text:
+                    video_title = metadata.get("title") or base_name
+                    safe_title = re.sub(r'[^\w\-]', '_', video_title)[:100]
+                    target_file = session_dir / f"{safe_title}.txt"
+                    
+                    # 1. Save TXT with Metadata Header
+                    with open(target_file, "w", encoding="utf-8") as f:
+                        f.write(f"TITLE: {video_title}\n")
+                        if metadata.get("url"): f.write(f"URL:   {metadata['url']}\n")
+                        if metadata.get("date"): f.write(f"DATE:  {metadata['date']}\n")
+                        f.write("-" * 40 + "\n\n")
+                        f.write(clean_text + "\n")
+                    
+                    # 2. Append to JSONL for RAG/LLM
+                    json_entry = {
+                        "content": clean_text,
+                        "metadata": metadata
+                    }
+                    jsonl.write(json.dumps(json_entry, ensure_ascii=False) + "\n")
+                    
+                    processed_count += 1
+            except Exception as e:
+                logger.error(f"Failed to process {vtt_path.name}: {e}")
             
-    # Cleanup temp VTTs
+    # Cleanup temp folder
     shutil.rmtree(temp_dir)
     return (session_dir, processed_count)
 

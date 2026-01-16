@@ -19,8 +19,9 @@
 ## 📖 Table of Contents
 - [⚖️ Legal Notice & Disclaimer](#⚖️-legal-notice--disclaimer)
 - [✨ Features](#-features)
-- [� How it Works](#-how-it-works-smart-deduplication)
-- [�🧹 Before & After](#-before--after)
+- [🤖 RAG & LLM Readiness](#-rag--llm-readiness)
+- [🧠 How it Works](#-how-it-works-smart-deduplication)
+- [🧹 Before & After](#-before--after)
 - [🛠️ Built With](#️-built-with)
 - [🛠️ Installation](#️-installation)
 - [🚀 Usage](#-usage)
@@ -51,7 +52,7 @@
 
 ---
 
-## � How it Works: Smart Deduplication
+## 🧠 How it Works: Smart Deduplication
 
 Most YouTube subtitle downloaders just give you the raw VTT, which is full of repetition because YouTube "builds" sentences word-by-word in auto-generated captions. 
 
@@ -65,7 +66,7 @@ Most YouTube subtitle downloaders just give you the raw VTT, which is full of re
 
 ---
 
-## �🧹 Before & After
+## 🧹 Before & After
 
 `ytknow` cleans up the messy duplication and timing tags common in YouTube auto-captions:
 
@@ -85,12 +86,32 @@ das heutige Video bedarf eines Vorworts
 ## ✨ Features
 
 - 🚀 **Lightning Fast**: Uses `yt-dlp` with `--lazy-playlist` to start processing immediately, even on channels with 2000+ videos.
-- 🧹 **Deep Cleaning**: Removes all VTT timing codes (`00:00:03.470 --> ...`), word-level tags (`<c>`), and alignment metadata.
+- 🧹 **Deep Cleaning**: Removes all VTT timing codes, word-level tags, and alignment metadata.
 - 🧠 **Smart Deduplication**: Automatically resolves sentence-building repetition in YouTube's auto-captions.
-- 📊 **Channel Survey**: Use `--survey` to get a summary of available subtitle languages across a whole channel before downloading.
-- 🌍 **Multi-Language Support**: Interactive selection of original, manual, or auto-translated subtitles with native language names.
-- 🛡️ **Resilient**: Gracefully handles unavailable or private videos in large playlists without crashing.
-- 📄 **Clean Output**: Generates beautifully wrapped text files named after video titles.
+- 🤖 **LLM-Optimized**: Generates clean TXT files with rich metadata headers and a consolidated JSONL master file.
+- 📊 **Channel Survey**: Use `--survey` to scan available languages across a whole channel.
+- 🌍 **Multi-Language Support**: Selection of original, manual, or auto-translated subtitles with native names.
+- 🛡️ **Resilient**: Gracefully handles unavailable or private videos in large playlists.
+
+---
+
+## 🤖 RAG & LLM Readiness
+
+`ytknow` is specifically designed for Retrieval-Augmented Generation (RAG). 
+
+### Metadata Enrichment
+Output files include header metadata (Source URL, Upload Date), allowing LLMs to cite sources and prioritize recent information.
+
+### Master JSONL Export
+Every session generates a `knowledge_master.jsonl` file. This format is the industry standard for:
+*   **Vector Database Ingestion**: easily upload text + metadata to Pinecone, Weaviate, or Chroma.
+*   **Model Fine-tuning**: directly usable as a training dataset.
+
+### Why Chunking?
+While `ytknow` provides clean text, we recommend "Semantic Chunking" before embedding:
+1.  **Context Window**: Transcripts can be huge; chunking ensures they fit into LLM prompts.
+2.  **Precision**: Small chunks (500-1000 tokens) allow the vector search to find the *exact* paragraph relevant to a query.
+3.  **Cost**: Only relevant chunks are sent to the LLM, saving on API tokens.
 
 ---
 
@@ -106,8 +127,8 @@ das heutige Video bedarf eines Vorworts
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/ytchannel2knowledge.git
-cd ytchannel2knowledge
+git clone https://github.com/egohead/ytknow.git
+cd ytknow
 
 # Run the installer (macOS/Linux)
 chmod +x install.sh
@@ -122,9 +143,6 @@ ytknow https://www.youtube.com/@ChannelName
 
 # Survey a channel for available languages (first 50 videos)
 ytknow --survey https://www.youtube.com/@ChannelName
-
-# Survey with a custom limit
-ytknow --survey --limit 100 https://www.youtube.com/@ChannelName
 ```
 
 ## 📋 Requirements
@@ -135,14 +153,14 @@ ytknow --survey --limit 100 https://www.youtube.com/@ChannelName
 
 ## 📁 Output Format
 
-The app creates a directory for each download session (e.g., `downloads/ChannelName_en/`). Each video gets its own `.txt` file with the video title, making it easy to browse or import into other tools.
+The app creates a directory for each session. Each video gets a `.txt` file with metadata headers, plus a master `JSONL` for RAG use.
 
 ```text
 downloads/
 └── ChannelName_en/
-    ├── Video_Title_1.txt
-    ├── Video_Title_2.txt
-    └── ChannelName_metadata.json
+    ├── knowledge_master.jsonl    <-- Perfect for Vector DBs
+    ├── Video_Title_1.txt         <-- Human readable with headers
+    └── Video_Title_2.txt
 ```
 
 ## ❓ FAQ
@@ -151,20 +169,14 @@ downloads/
 A: No, `ytknow` can only access public or unlisted content that you provide a URL for.
 
 **Q: Is it safe against YouTube bans?**
-A: We use `yt-dlp`'s optimized extraction methods. For massive channels, we recommend being patient as YouTube may temporarily throttle requests. If you see a `429 Error`, just wait 15 minutes.
+A: We use `yt-dlp`'s optimized extraction methods. For massive channels, we recommend being patient as YouTube may temporarily throttle requests.
 
-**Q: Can I use this for my RAG / LLM project?**
-A: Yes! That's exactly what it's built for. The output is clean text optimized for token usage and coherence.
+**Q: Can I use this for my RAG project?**
+A: Yes! The JSONL output is designed specifically for tools like LangChain, LlamaIndex, or OpenAI Fine-tuning.
 
 ## 🤝 Contributing
 
-Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+Contributions are welcome! Feel free to open an issue or submit a pull request.
 
 ## ⚖️ MIT License
 
