@@ -544,33 +544,45 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
         print(f"\n{Fore.YELLOW}⚠ No subtitles found for language '{lang_code}' at this URL.")
         return None
 
-    # Prepare the single output file
-    final_file = output_dir / f"{source_slug}_{lang_code}_complete.txt"
+    # Prepare the output directory for this session
+    session_dir = output_dir / f"{source_slug}_{lang_code}"
+    session_dir.mkdir(exist_ok=True)
+    
     total_files = len(vtt_files)
+    print(f"{Fore.WHITE}Step 2/2: Processing {total_files} files into '{session_dir.name}/'...")
     
-    print(f"{Fore.WHITE}Step 2/2: Processing & Merging {total_files} files...")
-    
-    with open(final_file, "w", encoding="utf-8") as out:
-        for i, vtt_path in enumerate(vtt_files, 1):
-            # Extract video title from filename
-            video_title = re.sub(r'\.[a-z]{2}(-[a-zA-Z0-9]+)?\.vtt$', '', vtt_path.name)
-            
-            # Print progress for processing
-            print_progress(i, total_files, prefix='Processing ', suffix=f'({i}/{total_files})')
-            
+    processed_count = 0
+    for i, vtt_path in enumerate(vtt_files, 1):
+        # Extract video title from filename
+        video_title = re.sub(r'\.[a-z]{2}(-[a-zA-Z0-9]+)?\.vtt$', '', vtt_path.name)
+        
+        # Print progress for processing
+        print_progress(i, total_files, prefix='Processing ', suffix=f'({i}/{total_files})')
+        
+        try:
             with open(vtt_path, "r", encoding="utf-8") as f:
                 content = f.read()
             
             clean_text = clean_vtt_content(content)
             
-            out.write("=" * 80 + "\n")
-            out.write(f"VIDEO: {video_title}\n")
-            out.write("=" * 80 + "\n\n")
-            out.write(clean_text + "\n\n")
+            if clean_text:
+                # Save as individual file
+                safe_title = re.sub(r'[^\w\-]', '_', video_title)
+                # Ensure filename isn't too long
+                safe_title = safe_title[:100]
+                target_file = session_dir / f"{safe_title}.txt"
+                
+                with open(target_file, "w", encoding="utf-8") as f:
+                    f.write(f"VIDEO: {video_title}\n")
+                    f.write("=" * len(f"VIDEO: {video_title}") + "\n\n")
+                    f.write(clean_text + "\n")
+                processed_count += 1
+        except Exception as e:
+            logger.error(f"Failed to process {vtt_path.name}: {e}")
             
     # Cleanup temp VTTs
     shutil.rmtree(temp_dir)
-    return (final_file, total_files)
+    return (session_dir, processed_count)
 
 def main():
     parser = argparse.ArgumentParser(
