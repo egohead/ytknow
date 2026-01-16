@@ -445,8 +445,52 @@ def print_progress(current, total, prefix='', suffix='', length=40):
     # \033[K clears from cursor to end of line
     sys.stdout.write(f'\r{prefix} |{bar}| {percent}% {suffix}\033[K')
     sys.stdout.flush()
-    if current == total:
-        print()
+    # Cleanup temp folder
+    shutil.rmtree(temp_dir)
+    return (session_dir, processed_count)
+
+def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 100) -> List[str]:
+    """Splits text into overlapping chunks, respecting sentence boundaries where possible."""
+    if not text:
+        return []
+        
+    chunks = []
+    start = 0
+    text_len = len(text)
+    
+    while start < text_len:
+        end = start + chunk_size
+        
+        # If we are strictly inside the text (not at the very end)
+        if end < text_len:
+            # Look for the last period/newline in the chunk to break cleanly
+            # We look back up to 30% of the chunk size
+            lookback = int(chunk_size * 0.3)
+            split_point = -1
+            
+            # Try to find a sentence ending
+            for i in range(end, end - lookback, -1):
+                if text[i] in ['.', '!', '?', '\n']:
+                    split_point = i + 1
+                    break
+            
+            if split_point != -1:
+                end = split_point
+        
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+            
+        # Move start forward, keeping the overlap
+        # If we successfully split at a sentence, we don't necessarily need overlap 
+        # if the context is preserved, but for RAG overlap is usually safer.
+        start = end - overlap
+        
+        # Ensure we always move forward
+        if start >= end:
+            start = end
+            
+    return chunks
 
 def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
     """Downloads and processes subtitles with a clean progress UI. Returns (final_file_path, video_count) or None."""
@@ -538,14 +582,18 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
     # Prepare the output directory for this session
     session_dir = output_dir / f"{source_slug}_{lang_code}"
     session_dir.mkdir(exist_ok=True)
-    jsonl_file = session_dir / "knowledge_master.jsonl"
+    
+    jsonl_master = session_dir / "knowledge_master.jsonl"
+    jsonl_chunks = session_dir / "knowledge_chunks.jsonl"
     
     total_files = len(vtt_files)
     print(f"{Fore.WHITE}Step 2/3: Processing {total_files} videos into '{session_dir.name}/'...")
     
     import json
     processed_count = 0
-    with open(jsonl_file, "w", encoding="utf-8") as jsonl:
+    with open(jsonl_master, "w", encoding="utf-8") as j_master, \
+         open(jsonl_chunks, "w", encoding="utf-8") as j_chunks:
+         
         for i, vtt_path in enumerate(vtt_files, 1):
             # Base name for metadata matching
             base_name = re.sub(r'\.[a-z]{2}(-[a-zA-Z0-9]+)?\.vtt$', '', vtt_path.name)
@@ -591,12 +639,25 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
                         f.write("-" * 60 + "\n\n")
                         f.write(clean_text + "\n")
                     
-                    # 2. Append to JSONL for RAG/LLM
+                    # 2. Append to MASTER JSONL (Full Text)
                     json_entry = {
                         "content": clean_text,
                         "metadata": metadata
                     }
-                    jsonl.write(json.dumps(json_entry, ensure_ascii=False) + "\n")
+                    j_master.write(json.dumps(json_entry, ensure_ascii=False) + "\n")
+                    
+                    # 3. Generate & Append CHUNKS to CHUNKS JSONL
+                    # Flatten metadata for chunks to minimal needed for retrieval
+                    chunk_meta = {k: v for k, v in metadata.items() if k in ['title', 'url', 'date', 'channel']}
+                    
+                    chunks = chunk_text(clean_text, chunk_size=1000, overlap=100)
+                    for idx, chunk in enumerate(chunks):
+                        chunk_entry = {
+                            "chunk_id": f"{safe_title}_{idx}",
+                            "content": chunk,
+                            "metadata": chunk_meta
+                        }
+                        j_chunks.write(json.dumps(chunk_entry, ensure_ascii=False) + "\n")
                     
                     processed_count += 1
             except Exception as e:
