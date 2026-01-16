@@ -27,5 +27,17 @@ pip install --upgrade pip
 echo "📦 Installing ytknow package in editable mode..."
 pip install -e .
 
+# Remove legacy manual wrapper if it exists
+LEGACY_PATH="/usr/local/bin/ytknow"
+if [ -f "$LEGACY_PATH" ]; then
+    echo "🗑️ Removing legacy wrapper at $LEGACY_PATH..."
+    sudo rm "$LEGACY_PATH"
+fi
+
+# Symlink the correct binary from venv
+VENV_BIN="$(pwd)/.venv/bin/ytknow"
+echo "🔗 linking $VENV_BIN to $LEGACY_PATH"
+sudo ln -sf "$VENV_BIN" "$LEGACY_PATH"
+
 echo "✅ Installation complete!"
 echo "You can now run 'ytknow [URL]' from anywhere."

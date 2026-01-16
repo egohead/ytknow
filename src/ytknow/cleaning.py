@@ -7,6 +7,8 @@ def clean_vtt_content(vtt_text: str) -> str:
     """Removes timestamps, tags, and handles repetition in YouTube auto-subs."""
     # 1. Global tag removal (e.g. <c>, word-level timestamps <00:00:00.000>)
     vtt_text = re.sub(r'<[^>]+>', '', vtt_text)
+    # Remove sound annotations like [Music], [Applause], [Musik]
+    vtt_text = re.sub(r'\[.*?\]', '', vtt_text)
     
     # 2. Extract meaningful lines
     lines = vtt_text.splitlines()

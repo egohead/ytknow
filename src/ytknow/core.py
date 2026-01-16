@@ -140,28 +140,38 @@ def get_available_languages(url: str, is_channel: bool) -> list:
     try:
         data = json.loads(res_json.stdout.splitlines()[0])
         
-        # Manual subs
+        # 1. Manual Subs (Always available/valid)
         if "subtitles" in data and data["subtitles"]:
             for code, info in data["subtitles"].items():
                 name = info[0].get("name", code)
                 langs.append((code + "-orig", name, "[Original]"))
                 
-        # Auto subs
+        # 2. Auto Subs (Filter for original language only)
+        # We want to avoid listing 100+ auto-translated languages.
+        # We only look for the one matching the video's detected language.
+        video_lang = data.get("language")
+        
         if "automatic_captions" in data and data["automatic_captions"]:
             for code, info in data["automatic_captions"].items():
                 name = info[0].get("name", code)
-                # Mark auto-translated vs auto-generated
-                # Usually 'en' in auto-caps is auto-generated if video is english
-                # But yt-dlp lists all auto-translations too.
-                # We filter for commonly useful ones or show them all?
-                # Showing 100 langs is bad.
-                # Let's just return the raw codes and let the UI handle valid options.
-                # But for the list, we distinguish.
                 
-                # Simplified: standard auto-subs usually look like 'en', 'de', etc.
-                # originating from 'en-orig' isn't a thing in auto-caps structure usually.
-                langs.append((code, name, "[Auto-Translate]" if code != "en" else "[Auto-English]")) # Simplified guess
+                # Logic: Is this the "source" auto-caption?
+                # Case A: Matches video metadata language (e.g. 'en' == 'en')
+                is_original_auto = False
+                if video_lang and code.startswith(video_lang):
+                    is_original_auto = True
                 
+                # Case B: If no video language, usually 'en' or 'en-orig' or matches the first one?
+                # Often the "original" is just the one that is NOT a translation. 
+                # Hard to tell perfectly from JSON, but usually matching the manual sub language is a good hint.
+                
+                if is_original_auto:
+                    tag = "[Auto-Generated]"
+                    langs.append((code, name, tag))
+                elif code == "en" and not video_lang: 
+                    # Fallback: if unknown, English is often the base
+                    langs.append((code, name, "[Auto-Generated?]"))
+
     except Exception:
         pass
         
