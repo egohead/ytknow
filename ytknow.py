@@ -16,6 +16,7 @@ from html import unescape
 import json
 import textwrap
 from collections import Counter
+from typing import List, Dict, Optional
 
 try:
     from colorama import init, Fore, Style
@@ -26,6 +27,12 @@ except ImportError:
         def __getattr__(self, name):
             return ""
     Fore = Style = FakeColor()
+
+# Optional Imports (Lazy Loaded where possible, but top-level import for typing is fine)
+try:
+    import openai
+except ImportError:
+    openai = None
 
 # Configuration
 LOG_FILE = "conversion.log"
@@ -45,9 +52,9 @@ NATIVE_LANG_NAMES = {
     'ky': 'Кыргызча', 'la': 'Latina', 'lb': 'Lëtzebuergesch', 'lo': 'ລາວ', 'lt': 'Lietuvių',
     'lv': 'Latviešu', 'mg': 'Malagasy', 'mi': 'Māori', 'mk': 'Македонски', 'ml': 'മലയാളം',
     'mn': 'Монгол', 'mr': 'मराठी', 'ms': 'Bahasa Melayu', 'mt': 'Malti', 'my': 'မြန်မာ',
-    'ne': 'नेपाली', 'nl': 'Nederlands', 'no': 'Norsk', 'ny': 'Chichewa', 'or': 'ଓଡ଼િଆ',
+    'ne': 'नेपाली', 'nl': 'Nederlands', 'no': 'Norsk', 'ny': 'Chichewa', 'or': 'ଓଡ଼ିଆ',
     'pa': 'ਪੰਜਾਬੀ', 'pl': 'Polski', 'ps': 'پښتو', 'pt': 'Português', 'qu': 'Quechua',
-    'ro': 'Română', 'ru': 'Русский', 'rw': 'Kinyarwanda', 'sd': 'سنڌي', 'si': 'සිංහල',
+    'ro': 'Română', 'ru': 'Русский', 'rw': 'Kinyarwanda', 'sd': 'سنڌੀ', 'si': 'සිංහල',
     'sk': 'Slovenčina', 'sl': 'Slovenščina', 'sm': 'Gagana Samoa', 'sn': 'chiShona',
     'so': 'Soomaali', 'sq': 'Shqip', 'sr': 'Српски', 'st': 'Sesotho', 'su': 'Basa Sunda',
     'sv': 'Svenska', 'sw': 'Kiswahili', 'ta': 'தமிழ்', 'te': 'తెలుగు', 'tg': 'Тоҷикӣ',
@@ -106,8 +113,6 @@ def check_dependencies():
         sys.exit(1)
     
     print(f"{Fore.GREEN}✓ Dependencies: yt-dlp found, ffmpeg found")
-
-import textwrap
 
 def clean_vtt_content(vtt_text: str) -> str:
     """Removes timestamps, tags, and handles repetition in YouTube auto-subs."""
@@ -210,6 +215,84 @@ def get_source_title(url: str) -> str:
         handle_ytdlp_error(e, "get_source_title")
         # Fallback to URL-based slug if metadata fetching fails
         return re.sub(r'[^\w\-]', '_', url.split('@')[-1] if '@' in url else "knowledge")
+
+# --- AI Features ---
+
+def transcribe_with_whisper(audio_path: Path, model_name: str = "base") -> str:
+    """Transcribes an audio file using OpenAI Whisper (local)."""
+    print(f"\n{Fore.MAGENTA}🎙️  Subtitles missing. Starting fallback transcription with Whisper ({model_name})...")
+    print(f"{Fore.WHITE}   Using device: CPU/MPS (MacOS). This takes 1-5 mins per 10 mins of audio.")
+    
+    try:
+        import whisper
+        import warnings
+        # Filter warnings to keep output clean
+        warnings.filterwarnings("ignore")
+        
+        model = whisper.load_model(model_name)
+        result = model.transcribe(str(audio_path), fp16=False) # fp16=False often needed on CPU/MPS
+        
+        text = result["text"].strip()
+        print(f"{Fore.GREEN}✓ Transcription complete! ({len(text)} chars)")
+        return text
+    except ImportError:
+        print(f"{Fore.RED}✗ Whisper not installed. Run 'pip install openai-whisper'.")
+        return ""
+    except Exception as e:
+        print(f"Error during transcription: {e}")
+        return ""
+
+def generate_summary_llm(text: str, metadata: dict) -> str:
+    """Generates a summary using OpenAI API."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        print(f"{Fore.YELLOW}⚠ Summary requested but OPENAI_API_KEY not found in environment.")
+        return ""
+
+    if not text or len(text) < 50:
+        return ""
+
+    print(f"\n{Fore.MAGENTA}🧠 Generating AI Summary (gpt-4o-mini)...")
+    
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        
+        prompt = f"""
+        You are an expert summarizer. Analyze the following video transcript.
+        
+        Video Title: {metadata.get('title', 'Unknown')}
+        Channel: {metadata.get('channel', 'Unknown')}
+        
+        Please provide:
+        1. A comprehensive 2-3 paragraph Summary of the content.
+        2. A list of 5-10 Key Takeaways (bullet points).
+        3. If possible, crude timestamps for major topic shifts (based on text flow).
+        
+        Format output in Markdown.
+        
+        Transcript:
+        {text[:25000]} 
+        """ 
+        # Truncate to ~25k chars to stay safe within context windows of smaller models if used, 
+        # though gpt-4o-mini has 128k context, so we could send more. 
+        # 25k chars is roughly 30-45 mins of talking.
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that summarizes video transcripts."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"{Fore.RED}✗ Summarization failed: {e}")
+        return ""
+
+# --- End AI Features ---
+
 
 def run_channel_survey(url: str, limit: int = 50):
     """Scans a channel/playlist and reports subtitle availability statistics."""
@@ -485,7 +568,7 @@ def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 100) -> List[st
             
     return chunks
 
-def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
+def process_url(url: str, output_dir: Path, lang_code: str, enable_summarize: bool = False, whisper_model: str = "base") -> Optional[tuple]:
     """Downloads and processes subtitles with a clean progress UI. Returns (final_file_path, video_count) or None."""
     check_dependencies()
     
@@ -562,26 +645,58 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
             process.wait()
                 
     except Exception as e:
-        # Check if temp_dir was defined
-        try:
-            if 'temp_dir' in locals() and temp_dir.exists():
-                 vtt_files = list(temp_dir.glob("*.vtt"))
-                 if not vtt_files:
-                     handle_ytdlp_error(e, "process_url")
-                     return None
-            else:
-                 handle_ytdlp_error(e, "process_url")
-                 return None
-        except Exception:
-             handle_ytdlp_error(e, "process_url")
+         handle_ytdlp_error(e, "process_url")
+         if 'temp_dir' not in locals():
              return None
 
-    if 'temp_dir' not in locals():
-         return None
-
     vtt_files = list(temp_dir.glob("*.vtt"))
+    
+    # --- Whisper Fallback Logic ---
     if not vtt_files:
-        print(f"\n{Fore.YELLOW}⚠ No subtitles found for language '{lang_code}' at this URL.")
+        print(f"\n{Fore.YELLOW}⚠ No subtitles found for language '{lang_code}'.")
+        print(f"{Fore.YELLOW}⚠ Attempting audio download and Whisper transcription...")
+        
+        # 1. Download Audio
+        audio_cmd = [
+            "yt-dlp",
+            # We need to download audio now since subs failed
+            "--extract-audio", 
+            "--audio-format", "m4a",
+            "--write-info-json",
+            "--output", f"{temp_dir}/%(title)s.%(ext)s",
+            "--newline",
+           # "--progress-template", "DOWNLOAD_PROGRESS:%(progress._percent_str)s", # Skip for simplicity in fallback
+            "--ignore-errors",
+            url            
+        ]
+        try:
+             subprocess.run(audio_cmd, check=True)
+        except Exception as e:
+             print(f"{Fore.RED}✗ Audio download failed: {e}")
+             return None
+
+        # 2. Transcribe
+        audio_files = list(temp_dir.glob("*.m4a"))
+        if not audio_files:
+             print(f"{Fore.RED}✗ No audio files downloaded.")
+             return None
+             
+        # Generate pseudo-VTTs or just handle text directly. 
+        # For compatibility with loop below, we will iterate audio files and transcribe them on the fly
+        # instead of vtt_files.
+    # --- End Whisper Logic setup --
+
+    # Determine what files to process (VTTs or Audio Fallback)
+    files_to_process = vtt_files
+    is_audio_fallback = False
+    
+    if not vtt_files:
+        files_to_process = list(temp_dir.glob("*.m4a"))
+        is_audio_fallback = True
+        
+    if not files_to_process:
+        print(f"{Fore.RED}❌ No content found to process.")
+        shutil.rmtree(temp_dir)
         return None
 
     # Prepare the output directory for this session
@@ -591,7 +706,7 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
     jsonl_master = session_dir / "knowledge_master.jsonl"
     jsonl_chunks = session_dir / "knowledge_chunks.jsonl"
     
-    total_files = len(vtt_files)
+    total_files = len(files_to_process)
     print(f"{Fore.WHITE}Step 2/3: Processing {total_files} videos into '{session_dir.name}/'...")
     
     import json
@@ -599,14 +714,19 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
     with open(jsonl_master, "w", encoding="utf-8") as j_master, \
          open(jsonl_chunks, "w", encoding="utf-8") as j_chunks:
          
-        for i, vtt_path in enumerate(vtt_files, 1):
+        for i, file_path in enumerate(files_to_process, 1):
             # Base name for metadata matching
-            base_name = re.sub(r'\.[a-z]{2}(-[a-zA-Z0-9]+)?\.vtt$', '', vtt_path.name)
-            info_json_path = vtt_path.with_name(f"{base_name}.info.json")
+            # VTT: .lang.vtt -> base  | Audio: .m4a -> base
+            base_name = file_path.stem
+            # Clean up suffix like .en or .de if it exists (for vtt)
+            base_name = re.sub(r'\.[a-z]{2}(-[a-zA-Z0-9]+)?$', '', base_name)
+            
+            info_json_path = list(temp_dir.glob(f"{re.escape(base_name)}*.info.json"))
+            info_json_path = info_json_path[0] if info_json_path else None
             
             # Extract metadata if available
             metadata = {}
-            if info_json_path.exists():
+            if info_json_path and info_json_path.exists():
                 try:
                     with open(info_json_path, "r", encoding="utf-8") as j:
                         raw_meta = json.load(j)
@@ -624,10 +744,16 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
             print_progress(i, total_files, prefix='Optimizing ', suffix=f'({i}/{total_files})')
             
             try:
-                with open(vtt_path, "r", encoding="utf-8") as f:
-                    content = f.read()
+                clean_text = ""
                 
-                clean_text = clean_vtt_content(content)
+                if is_audio_fallback:
+                    # TRANSCRIBE
+                    clean_text = transcribe_with_whisper(file_path, model_name=whisper_model)
+                else:
+                    # READ VTT
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    clean_text = clean_vtt_content(content)
                 
                 if clean_text:
                     video_title = metadata.get("title") or base_name
@@ -652,7 +778,6 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
                     j_master.write(json.dumps(json_entry, ensure_ascii=False) + "\n")
                     
                     # 3. Generate & Append CHUNKS to CHUNKS JSONL
-                    # Flatten metadata for chunks to minimal needed for retrieval
                     chunk_meta = {k: v for k, v in metadata.items() if k in ['title', 'url', 'date', 'channel']}
                     
                     chunks = chunk_text(clean_text, chunk_size=1000, overlap=100)
@@ -664,9 +789,19 @@ def process_url(url: str, output_dir: Path, lang_code: str) -> Optional[tuple]:
                         }
                         j_chunks.write(json.dumps(chunk_entry, ensure_ascii=False) + "\n")
                     
+                    # 4. Generate SUMMARY (if requested)
+                    if enable_summarize:
+                         summary = generate_summary_llm(clean_text, metadata)
+                         if summary:
+                             summary_file = session_dir / f"{safe_title}_summary.md"
+                             with open(summary_file, "w", encoding="utf-8") as f:
+                                 f.write(summary)
+                             # Append summary as a special chunk or separate file? 
+                             # For now, just a separate file.
+                    
                     processed_count += 1
             except Exception as e:
-                logger.error(f"Failed to process {vtt_path.name}: {e}")
+                logger.error(f"Failed to process {file_path.name}: {e}")
             
     # Cleanup temp folder
     shutil.rmtree(temp_dir)
@@ -680,8 +815,8 @@ def main():
 Examples:
   ytknow https://youtube.com/@channel
   ytknow https://youtube.com/watch?v=video -l de
-  ytknow https://youtube.com/@channel --survey
-  ytknow [URL] -o ~/MyBase
+  ytknow https://youtube.com/watch?v=video --summarize
+  ytknow [URL] -o ~/MyBase --model small
         """
     )
     parser.add_argument("url", nargs="?", help="YouTube URL (Channel or Video)")
@@ -689,6 +824,10 @@ Examples:
     parser.add_argument("-l", "--lang", help="Language code (e.g., 'en', 'de')")
     parser.add_argument("-s", "--survey", action="store_true", help="Survey channel/playlist for subtitle availability")
     parser.add_argument("--limit", type=int, default=50, help="Max videos to scan during survey (default: 50)")
+    
+    # New AI Args
+    parser.add_argument("--summarize", action="store_true", help="Generate AI summary (requires OPENAI_API_KEY)")
+    parser.add_argument("--model", default="base", help="Whisper model size (tiny, base, small, medium, large) for fallback")
     
     args = parser.parse_args()
     
@@ -715,7 +854,7 @@ Examples:
         lang_code = select_language_interactive(url, is_channel)
         print("-" * 60)
         
-    result = process_url(url, Path(args.output), lang_code)
+    result = process_url(url, Path(args.output), lang_code, enable_summarize=args.summarize, whisper_model=args.model)
     
     print("\n" + "=" * 60)
     if result:
@@ -727,6 +866,10 @@ Examples:
         # Calculate total size of the session directory
         total_size = sum(f.stat().st_size for f in dir_path.glob('*') if f.is_file())
         print(f"{Fore.WHITE}Total Size:       {Fore.YELLOW}{total_size / 1024:.1f} KB")
+        
+        if args.summarize:
+             print(f"{Fore.MAGENTA}🧠 Summaries generated in output folder.")
+             
     else:
         print(f"{Fore.RED}❌ FAILED: Could not create knowledge base.")
     

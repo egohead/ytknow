@@ -89,6 +89,8 @@ das heutige Video bedarf eines Vorworts
 - 🧹 **Deep Cleaning**: Removes all VTT timing codes, word-level tags, and alignment metadata.
 - 🧠 **Smart Deduplication**: Automatically resolves sentence-building repetition in YouTube's auto-captions.
 - 🤖 **LLM-Optimized**: Generates clean TXT files with rich metadata headers and a consolidated JSONL master file.
+- 🎙️ **Whisper Fallback**: Automatically transcribes videos using **OpenAI Whisper** if no subtitles are found.
+- 🧠 **AI Summarization**: Generate high-quality summaries, key takeaways, and timestamps using the OpenAI API.
 - 📊 **Channel Survey**: Use `--survey` to scan available languages across a whole channel.
 - 🌍 **Multi-Language Support**: Interactive menu to choose from original, manual, or auto-translated subtitles.
 - 🔄 **Smart Fallback**: Automatically prefers `en-orig` if standard `en` is unavailable but requested.
@@ -144,6 +146,13 @@ chmod +x install.sh
 # Process a single video or channel
 ytknow https://www.youtube.com/@ChannelName
 
+# Summarize a video (requires OPENAI_API_KEY)
+export OPENAI_API_KEY="sk-..."
+ytknow https://youtube.com/watch?v=VIDEO_ID --summarize
+
+# Transcribe with a specific Whisper model (tiny, base, small, medium, large)
+ytknow https://youtube.com/watch?v=VIDEO_ID --model small
+
 # Survey a channel for available languages (first 50 videos)
 ytknow --survey https://www.youtube.com/@ChannelName
 ```
@@ -164,6 +173,7 @@ downloads/
     ├── knowledge_master.jsonl    <-- Full context for each video
     ├── knowledge_chunks.jsonl    <-- 1000-char semantic chunks (RAG ready)
     ├── Video_Title_1.txt         <-- Human readable with metadata headers
+    ├── Video_Title_1_summary.md  <-- AI Summary (if --summarize used)
     └── Video_Title_2.txt
 ```
 

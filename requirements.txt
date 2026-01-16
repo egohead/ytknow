@@ -1,2 +1,4 @@
 colorama
 yt-dlp
+openai-whisper
+openai
