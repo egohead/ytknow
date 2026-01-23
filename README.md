@@ -11,7 +11,7 @@
 **Extract YouTube channel knowledge into clean text files for learning & research.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![yt-dlp](https://img.shields.io/badge/engine-yt--dlp-red.svg)](https://github.com/yt-dlp/yt-dlp)
 
 ---
@@ -85,14 +85,14 @@ das heutige Video bedarf eines Vorworts
 
 ## ✨ Features
 
-- 🚀 **Lightning Fast**: Uses `yt-dlp` with `--lazy-playlist` to start processing immediately, even on channels with 2000+ videos.
+- ✨ **Interactive Menu**: New TUI to easily select subtitle languages and download modes.
+- 🚀 **Lightning Fast**: Uses `yt-dlp` with `--lazy-playlist` to start processing immediately.
 - 🧹 **Deep Cleaning**: Removes all VTT timing codes, word-level tags, and alignment metadata.
 - 🧠 **Smart Deduplication**: Automatically resolves sentence-building repetition in YouTube's auto-captions.
-- 🤖 **LLM-Optimized**: Generates clean TXT files with rich metadata headers and a consolidated JSONL master file.
+- 🤖 **LLM-Optimized**: Generates clean TXT and MD files with rich metadata headers and consolidated JSONL files.
 - 🎙️ **Whisper Fallback**: Automatically transcribes videos using **OpenAI Whisper** if no subtitles are found.
-- 🧠 **AI Summarization**: Generate high-quality summaries, key takeaways, and timestamps using the OpenAI API.
-- 📊 **Channel Survey**: Use `--survey` to scan available languages across a whole channel.
-- 🌍 **Multi-Language Support**: Interactive menu to choose from original, manual, or auto-translated subtitles.
+- 🧠 **AI Summarization**: Generate high-quality summaries and key takeaways using the OpenAI API.
+- 💬 **Comments Integration**: Download video comments along with transcripts or as a standalone task.
 - 🔄 **Smart Fallback**: Automatically prefers `en-orig` if standard `en` is unavailable but requested.
 - 🛡️ **Resilient**: Gracefully handles unavailable or private videos in large playlists.
 
@@ -142,39 +142,79 @@ chmod +x install.sh
 
 ## 🚀 Usage
 
+`ytknow` now features an interactive mode. Simply run it with a URL:
+
 ```bash
-# Process a single video or channel
+# Start interactive processing
 ytknow https://www.youtube.com/@ChannelName
+```
+
+### 🎮 Interactive Options
+When you run `ytknow`, it will guide you through:
+1.  **Language Selection**: Choose from all available subtitles (Original, Manual, or Auto-Translated).
+2.  **Download Mode**:
+    *   **Knowledge Base**: Subtitles + Metadata + AI Summary.
+    *   **Comments Only**: Just the user comments.
+    *   **All**: Everything combined.
+
+### 🛠️ CLI Overrides
+```bash
+# Skip the menu by providing a language code
+ytknow https://youtube.com/watch?v=VIDEO_ID -l en
 
 # Summarize a video (requires OPENAI_API_KEY)
 export OPENAI_API_KEY="sk-..."
 ytknow https://youtube.com/watch?v=VIDEO_ID --summarize
 
-# Transcribe with a specific Whisper model (tiny, base, small, medium, large)
+# Transcribe with a specific Whisper model
 ytknow https://youtube.com/watch?v=VIDEO_ID --model small
 
-# Survey a channel for available languages (first 50 videos)
+# Survey a channel for available languages
 ytknow --survey https://www.youtube.com/@ChannelName
 ```
 
+## 💬 YouTube Comments Downloader
+
+`ytknow` comes with a dedicated sub-tool for bulk comment extraction: `yt-comments`.
+
+### Usage
+```bash
+# Download comments for a video
+yt-comments video "https://youtube.com/watch?v=dQw4w9WgXcQ" --format json --output ./comments
+
+# Download comments for a whole channel
+yt-comments channel "https://youtube.com/@ChannelName" --max-videos 20
+
+# Download from list of URLs
+yt-comments batch urls.txt --parallel 4
+```
+
+### Configuration
+Create `~/.config/yt-comments/config.yaml`. Example provided in `config_example.yaml`.
+
 ## 📋 Requirements
 
-- **Python 3.7+**
+- **Python 3.8+**
 - **yt-dlp**: (Installed automatically via `install.sh`)
-- **ffmpeg**: Required for some metadata extraction.
+- **ffmpeg**: Required for metadata extraction and audio transcription.
 
 ## 📁 Output Format
 
-The app creates a directory for each session. Each video gets a `.txt` file with metadata headers, plus a master `JSONL` for RAG use.
+The app creates a structured knowledge base for each source.
 
 ```text
 downloads/
-└── ChannelName_en/
-    ├── knowledge_master.jsonl    <-- Full context for each video
-    ├── knowledge_chunks.jsonl    <-- 1000-char semantic chunks (RAG ready)
-    ├── Video_Title_1.txt         <-- Human readable with metadata headers
-    ├── Video_Title_1_summary.md  <-- AI Summary (if --summarize used)
-    └── Video_Title_2.txt
+└── ChannelName/
+    ├── ChannelName_master.jsonl  <-- Full context for all videos
+    ├── ChannelName_chunks.jsonl  <-- 1000-char semantic chunks (RAG ready)
+    ├── ChannelName_master.txt    <-- All transcripts in one file
+    ├── ChannelName_master.md     <-- All transcripts in one markdown file
+    └── videos/
+        └── Video_Title_1/
+            ├── Video_Title_1.txt         <-- Human readable with metadata headers
+            ├── Video_Title_1.md          <-- Markdown version
+            ├── Video_Title_1.json        <-- YouTube Comments (if enabled)
+            └── Video_Title_1_summary.md  <-- AI Summary (if --summarize used)
 ```
 
 ## ❓ FAQ

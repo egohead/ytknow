@@ -2,3 +2,8 @@ colorama
 yt-dlp
 openai-whisper
 openai
+typer
+pandas
+openpyxl
+tqdm
+pyyaml

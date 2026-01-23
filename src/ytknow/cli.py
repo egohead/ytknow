@@ -93,7 +93,25 @@ def select_language_interactive(url: str, is_channel: bool) -> str:
 
     sys.stdout.write("\033[?25h") # Show cursor
     print(f"\n{Fore.GREEN}✓ Selected: {all_options[selected_idx]}")
+    sys.stdout.write("\033[?25h") # Show cursor
+    print(f"\n{Fore.GREEN}✓ Selected: {all_options[selected_idx]}")
     return all_options[selected_idx]
+
+def ask_download_mode() -> str:
+    """Asks user what component to download."""
+    print(f"\n{Fore.WHITE}What would you like to download?")
+    print(f"  {Fore.CYAN}[1] {Fore.WHITE}Knowledge Base (Subtitles + Metadata + Summary)")
+    print(f"  {Fore.CYAN}[2] {Fore.WHITE}Comments Only")
+    print(f"  {Fore.CYAN}[3] {Fore.WHITE}All (Knowledge + Comments)")
+    
+    while True:
+        try:
+            choice = input(f"\n{Fore.CYAN}👉 Select [1-3]: {Fore.WHITE}").strip()
+            if choice == "1": return "knowledge"
+            if choice == "2": return "comments"
+            if choice == "3": return "all"
+        except KeyboardInterrupt:
+            sys.exit(0)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -146,7 +164,23 @@ Examples:
         lang_code = select_language_interactive(url, is_channel)
         print("-" * 60)
         
-    result = process_url(url, Path(args.output), lang_code, enable_summarize=args.summarize, whisper_model=args.model)
+    # Ask for Download Mode (Interactivity requested by user)
+    # "Und den User Fragen ob er untertitel, comments, video alles oder so herunterladne will"
+    mode = "knowledge"
+    # Only ask if not specifying args that imply a mode? But user wants it generally.
+    # If we are in non-interactive mode (e.g. piped), we should default to knowledge.
+    if sys.stdin.isatty():
+        mode = ask_download_mode()
+
+    # If mode is "comments" or "all", enable comments
+    if mode in ["comments", "all"]:
+        enable_comments = True
+        
+    skip_media = False
+    if mode == "comments":
+        skip_media = True
+        
+    result = process_url(url, Path(args.output), lang_code, enable_summarize=args.summarize, whisper_model=args.model, enable_comments=enable_comments, skip_media=skip_media)
     
     print("\n" + "=" * 60)
     if result:

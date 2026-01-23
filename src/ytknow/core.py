@@ -13,6 +13,11 @@ from .utils import check_dependencies, handle_ytdlp_error, print_progress
 from .cleaning import clean_vtt_content, chunk_text
 from .ai import transcribe_with_whisper, generate_summary_llm
 
+try:
+    from .comments import download_video_comments
+except ImportError:
+    download_video_comments = None
+
 logger = logging.getLogger(__name__)
 
 def get_source_title(url: str) -> str:
@@ -179,7 +184,7 @@ def get_available_languages(url: str, is_channel: bool) -> list:
         
     return langs
 
-def process_url(url: str, output_dir: Path, lang_code: str, enable_summarize: bool = False, whisper_model: str = "base") -> Optional[tuple]:
+def process_url(url: str, output_dir: Path, lang_code: str = "en", enable_summarize: bool = False, whisper_model: str = "base", enable_comments: bool = False, skip_media: bool = False) -> Optional[tuple]:
     """Downloads and processes subtitles with a clean progress UI. Returns (final_file_path, video_count) or None."""
     check_dependencies()
     
@@ -202,23 +207,37 @@ def process_url(url: str, output_dir: Path, lang_code: str, enable_summarize: bo
     videos_sub_dir.mkdir(exist_ok=True)
     
     # yt-dlp command to get subtitles AND metadata
-    sub_pattern = f"{lang_code}.*"
-    cmd = [
-        "yt-dlp",
-        "--skip-download",
-        "--write-subs",
-        "--write-auto-subs",
-        "--write-info-json", # Get rich metadata
-        "--sub-langs", sub_pattern,
-        "--output", f"{temp_dir}/%(title)s.%(ext)s",
-        "--newline",
-        "--lazy-playlist",
-        "--progress-template", "DOWNLOAD_PROGRESS:%(progress._percent_str)s",
-        "--ignore-errors",
-        url
-    ]
-    
-    print(f"{Fore.WHITE}Step 1/3: Downloading Subtitles & Metadata...")
+    if skip_media:
+        # Metadata ONLY (for comments/survey)
+        cmd = [
+            "yt-dlp",
+            "--skip-download",
+            "--write-info-json",
+            "--output", f"{temp_dir}/%(title)s.%(ext)s",
+            "--newline",
+            "--lazy-playlist",
+            "--ignore-errors",
+            url
+        ]
+        print(f"{Fore.WHITE}Step 1/3: Fetching Metadata (Media Download Skipped)...")
+    else:
+        # Standard Knowledge Base (Subs/Audio)
+        sub_pattern = f"{lang_code}.*"
+        cmd = [
+            "yt-dlp",
+            "--skip-download",
+            "--write-subs",
+            "--write-auto-subs",
+            "--write-info-json", # Get rich metadata
+            "--sub-langs", sub_pattern,
+            "--output", f"{temp_dir}/%(title)s.%(ext)s",
+            "--newline",
+            "--lazy-playlist",
+            "--progress-template", "DOWNLOAD_PROGRESS:%(progress._percent_str)s",
+            "--ignore-errors",
+            url
+        ]
+        print(f"{Fore.WHITE}Step 1/3: Downloading Subtitles & Metadata...")
     print(f"{Fore.BLACK}{Style.BRIGHT}Scanning channel for videos (this might take a moment)...")
     
     current_video_title = "Video"
@@ -272,43 +291,50 @@ def process_url(url: str, output_dir: Path, lang_code: str, enable_summarize: bo
     # --- Whisper Fallback Logic ---
     is_audio_fallback = False
     
-    if not vtt_files:
-        print(f"\n{Fore.YELLOW}⚠ No subtitles found for language '{lang_code}'.")
-        print(f"{Fore.YELLOW}⚠ Attempting audio download and Whisper transcription...")
-        
-        # 1. Download Audio
-        audio_cmd = [
-            "yt-dlp",
-            # We need to download audio now since subs failed
-            "--extract-audio", 
-            "--audio-format", "m4a",
-            "--write-info-json",
-            "--output", f"{temp_dir}/%(title)s.%(ext)s",
-            "--newline",
-           # "--progress-template", "DOWNLOAD_PROGRESS:%(progress._percent_str)s", # Skip for simplicity in fallback
-            "--ignore-errors",
-            url            
-        ]
-        try:
-             subprocess.run(audio_cmd, check=True)
-             is_audio_fallback = True
-        except Exception as e:
-             print(f"{Fore.RED}✗ Audio download failed: {e}")
-             return None
-
-        # 2. Check if audio files exist
-        audio_files = list(temp_dir.glob("*.m4a"))
-        if not audio_files:
-             print(f"{Fore.RED}✗ No audio files downloaded.")
-             return None
-             
+    # If we are NOT skipping media, we check for subs/audio
+    if not skip_media:
+        if not vtt_files:
+            print(f"\n{Fore.YELLOW}⚠ No subtitles found for language '{lang_code}'.")
+            print(f"{Fore.YELLOW}⚠ Attempting audio download and Whisper transcription...")
+            
+            # 1. Download Audio
+            audio_cmd = [
+                "yt-dlp",
+                # We need to download audio now since subs failed
+                "--extract-audio", 
+                "--audio-format", "m4a",
+                "--write-info-json",
+                "--output", f"{temp_dir}/%(title)s.%(ext)s",
+                "--newline",
+                "--ignore-errors",
+                url            
+            ]
+            try:
+                 subprocess.run(audio_cmd, check=True)
+                 is_audio_fallback = True
+            except Exception as e:
+                 print(f"{Fore.RED}✗ Audio download failed: {e}")
+                 # In knowledge extraction, this is fatal if we demand transcripts.
+                 # But if we have comments enabled? maybe proceed?
+                 # For now, return None as before unless we refactor deeper.
+                 return None
+    
+            # 2. Check if audio files exist
+            audio_files = list(temp_dir.glob("*.m4a"))
+            if not audio_files:
+                 print(f"{Fore.RED}✗ No audio files downloaded.")
+                 return None
+                 
     # --- End Whisper Logic setup --
 
-    # Determine what files to process (VTTs or Audio Fallback)
-    files_to_process = vtt_files
-    
-    if is_audio_fallback:
+    # Determine what files to process (VTTs, Audio Fallback, or Just Info JSONs if skipping media)
+    if skip_media:
+        # Use info.json files as the "source" to iterate over
+        files_to_process = list(temp_dir.glob("*.info.json"))
+    elif is_audio_fallback:
         files_to_process = list(temp_dir.glob("*.m4a"))
+    else:
+        files_to_process = vtt_files
         
     if not files_to_process:
         print(f"{Fore.RED}❌ No content found to process.")
@@ -337,8 +363,14 @@ def process_url(url: str, output_dir: Path, lang_code: str, enable_summarize: bo
             # Clean up suffix like .en or .de if it exists (for vtt)
             base_name = re.sub(r'\.[a-z]{2}(-[a-zA-Z0-9]+)?$', '', base_name)
             
-            info_json_path = list(temp_dir.glob(f"{re.escape(base_name)}*.info.json"))
-            info_json_path = info_json_path[0] if info_json_path else None
+            if skip_media:
+                # If skipping media, we are iterating .info.json files directly
+                # base_name is filename without suffix
+                info_json_path = file_path
+                clean_text = "" 
+            else:
+                info_json_path = list(temp_dir.glob(f"{re.escape(base_name)}*.info.json"))
+                info_json_path = info_json_path[0] if info_json_path else None
             
             # Extract metadata if available
             metadata = {}
@@ -362,22 +394,26 @@ def process_url(url: str, output_dir: Path, lang_code: str, enable_summarize: bo
             try:
                 clean_text = ""
                 
-                if is_audio_fallback:
-                    # TRANSCRIBE
-                    clean_text = transcribe_with_whisper(file_path, model_name=whisper_model)
-                else:
-                    # READ VTT
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        content = f.read()
-                    clean_text = clean_vtt_content(content)
+                if not skip_media:
+                    if is_audio_fallback:
+                        # TRANSCRIBE
+                        clean_text = transcribe_with_whisper(file_path, model_name=whisper_model)
+                    else:
+                        # READ VTT
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            content = f.read()
+                        clean_text = clean_vtt_content(content)
+                
+                # Base processing for folder structure
+                # Even if clean_text is empty, we validly want the folder for comments
+                video_title = metadata.get("title") or base_name
+                safe_title = re.sub(r'[^\w\-]', '_', video_title)[:100]
+                
+                # Create Video Subdirectory inside 'videos' folder
+                video_dir = videos_sub_dir / safe_title
+                video_dir.mkdir(exist_ok=True)
                 
                 if clean_text:
-                    video_title = metadata.get("title") or base_name
-                    safe_title = re.sub(r'[^\w\-]', '_', video_title)[:100]
-                    
-                    # Create Video Subdirectory inside 'videos' folder
-                    video_dir = videos_sub_dir / safe_title
-                    video_dir.mkdir(exist_ok=True)
                     
                     target_file = video_dir / f"{safe_title}.txt"
                     
@@ -445,7 +481,17 @@ def process_url(url: str, output_dir: Path, lang_code: str, enable_summarize: bo
                              with open(summary_file, "w", encoding="utf-8") as f:
                                  f.write(summary)
                     
-                    processed_count += 1
+                # 5. Download Comments (if enabled)
+                # Check regardless of clean_text availability
+                if enable_comments and download_video_comments:
+                     vid_url = metadata.get("url") or metadata.get("webpage_url")
+                     if vid_url:
+                         print(f"   {Fore.CYAN}💬 Downloading comments...", end="\r")
+                         # Use 'json' format for raw data, save in video_dir
+                         download_video_comments(vid_url, video_dir, format="json")
+                         print(f"   {Fore.GREEN}💬 Comments saved.      ")
+                
+                processed_count += 1
             except Exception as e:
                 logger.error(f"Failed to process {file_path.name}: {e}")
             

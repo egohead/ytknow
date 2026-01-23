@@ -1,0 +1,10 @@
+# yt-comments configuration
+output_dir: comments_output
+format: json # json, csv, excel
+max_comments: 1000
+min_likes: 0
+rate_limit: 2.0 # seconds
+parallel: 4 # number of concurrent downloads
+filter_keywords: # optional
+  - awesome
+  - cool
