@@ -146,7 +146,7 @@ chmod +x install.sh
 
 ```bash
 # Start interactive processing
-ytknow https://www.youtube.com/@ChannelName
+ytknow [YOUTUBE_URL]
 ```
 
 ### 🎮 Interactive Options
@@ -160,17 +160,17 @@ When you run `ytknow`, it will guide you through:
 ### 🛠️ CLI Overrides
 ```bash
 # Skip the menu by providing a language code
-ytknow https://youtube.com/watch?v=VIDEO_ID -l en
+ytknow [VIDEO_URL] -l en
 
 # Summarize a video (requires OPENAI_API_KEY)
 export OPENAI_API_KEY="sk-..."
-ytknow https://youtube.com/watch?v=VIDEO_ID --summarize
+ytknow [VIDEO_URL] --summarize
 
 # Transcribe with a specific Whisper model
-ytknow https://youtube.com/watch?v=VIDEO_ID --model small
+ytknow [VIDEO_URL] --model small
 
 # Survey a channel for available languages
-ytknow --survey https://www.youtube.com/@ChannelName
+ytknow --survey [CHANNEL_URL]
 ```
 
 ## 💬 YouTube Comments Downloader
@@ -180,10 +180,10 @@ ytknow --survey https://www.youtube.com/@ChannelName
 ### Usage
 ```bash
 # Download comments for a video
-yt-comments video "https://youtube.com/watch?v=dQw4w9WgXcQ" --format json --output ./comments
+yt-comments video "[VIDEO_URL]" --format json --output ./comments
 
 # Download comments for a whole channel
-yt-comments channel "https://youtube.com/@ChannelName" --max-videos 20
+yt-comments channel "[CHANNEL_URL]" --max-videos 20
 
 # Download from list of URLs
 yt-comments batch urls.txt --parallel 4

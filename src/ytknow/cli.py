@@ -119,9 +119,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ytknow https://youtube.com/@channel
-  ytknow https://youtube.com/watch?v=video -l de
-  ytknow https://youtube.com/watch?v=video --summarize
+  ytknow [CHANNEL_URL]
+  ytknow [VIDEO_URL] -l de
+  ytknow [VIDEO_URL] --summarize
   ytknow [URL] -o ~/MyBase --model small
         """
     )
